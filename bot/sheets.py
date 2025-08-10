@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import json
 import time
-from typing import List, Iterable, Any
+from typing import List, Iterable, Any, Set
 from dataclasses import dataclass
 
 import gspread_asyncio
@@ -54,7 +54,7 @@ def get_agcm():
     return gspread_asyncio.AsyncioGspreadClientManager(get_creds)
 
 
-# --------- Кэш ---------
+# --------- Кэш офферов ---------
 _cache: List[Offer] = []
 _cache_ts: float | None = None
 
@@ -104,7 +104,7 @@ async def _query() -> List[Offer]:
     return offers
 
 
-# --------- Публичные функции ---------
+# --------- Публичные функции (офферы) ---------
 async def get_offers(force: bool = False) -> List[Offer]:
     global _cache, _cache_ts
     if force or _cache_expired():
@@ -122,3 +122,93 @@ async def offers_by_geo(geo: str) -> List[Offer]:
 
 async def top_offers() -> List[Offer]:
     return [o for o in await get_offers() if "топ" in (o.status or "").lower()]
+
+
+# ===================== Доступ (партнёры) =====================
+
+# Название листа со списком ID (можно переопределить переменной окружения)
+_PARTNERS_WS = os.environ.get("PARTNERS_WORKSHEET", "partners")
+
+# Кэш партнёров
+_p_cache: Set[int] = set()
+_p_ts: float | None = None
+
+def _p_cache_expired() -> bool:
+    global _p_ts
+    if _p_ts is None:
+        return True
+    # кэшируем список партнёров на 60 секунд
+    return (time.monotonic() - _p_ts) > 60
+
+
+async def _partners_ws():
+    """Открыть лист с партнёрами. Если нет — создать с заголовком user_id."""
+    agcm = get_agcm()
+    client = await agcm.authorize()
+    sh = await client.open_by_key(settings.sheets_id)
+    try:
+        ws = await sh.worksheet(_PARTNERS_WS)
+    except Exception:
+        # создаём лист и ставим заголовок
+        ws = await sh.add_worksheet(title=_PARTNERS_WS, rows=100, cols=1)
+        await ws.update("A1", [["user_id"]])
+    return ws
+
+
+async def partner_ids() -> Set[int]:
+    """Считать id партнёров из листа (с кэшем)."""
+    global _p_cache, _p_ts
+    if not _p_cache_expired():
+        return _p_cache
+
+    try:
+        ws = await _partners_ws()
+        values = await ws.get_all_values()
+    except Exception:
+        return set()
+
+    ids: Set[int] = set()
+    for row in values[1:]:
+        if not row or not row[0].strip():
+            continue
+        try:
+            ids.add(int(row[0].strip()))
+        except ValueError:
+            continue
+
+    _p_cache = ids
+    _p_ts = time.monotonic()
+    return ids
+
+
+async def add_partner(user_id: int) -> bool:
+    """Добавить user_id. True — добавили, False — уже был."""
+    ids = await partner_ids()
+    if user_id in ids:
+        return False
+    ws = await _partners_ws()
+    await ws.append_row([str(user_id)])
+    # сбрасываем кэш
+    global _p_cache, _p_ts
+    _p_cache = set()
+    _p_ts = None
+    return True
+
+
+async def remove_partner(user_id: int) -> bool:
+    """Удалить user_id. True — удалили, False — не найден."""
+    ws = await _partners_ws()
+    values = await ws.get_all_values()
+    row_idx = None
+    for i, row in enumerate(values[1:], start=2):  # начинаем со 2-й строки
+        if row and row[0].strip() == str(user_id):
+            row_idx = i
+            break
+    if row_idx is None:
+        return False
+    await ws.delete_rows(row_idx)
+    # сбрасываем кэш
+    global _p_cache, _p_ts
+    _p_cache = set()
+    _p_ts = None
+    return True
