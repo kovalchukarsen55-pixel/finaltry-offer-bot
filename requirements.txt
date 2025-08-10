@@ -1,0 +1,7 @@
+aiogram==3.*
+loguru
+pydantic==2.*
+pydantic-settings==2.*
+python-dotenv
+gspread_asyncio
+google-auth

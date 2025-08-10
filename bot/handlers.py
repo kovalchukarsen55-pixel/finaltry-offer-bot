@@ -1,0 +1,258 @@
+# bot/handlers.py
+import html
+from aiogram import Router, F
+from aiogram.types import (
+    Message, CallbackQuery,
+    InlineKeyboardMarkup, InlineKeyboardButton
+)
+
+from bot import sheets
+from bot.config import settings
+
+router = Router(name=__name__)
+
+
+GEO_FLAGS = {
+    "AR": "🇦🇷", "AU": "🇦🇺", "BD": "🇧🇩", "BF": "🇧🇫", "BJ": "🇧🇯",
+    "BR": "🇧🇷", "CA": "🇨🇦", "CH": "🇨🇭", "CI": "🇨🇮", "CL": "🇨🇱",
+    "CM": "🇨🇲", "CO": "🇨🇴", "CZ": "🇨🇿", "DE": "🇩🇪", "ES": "🇪🇸",
+    "FR": "🇫🇷", "HU": "🇭🇺", "IN": "🇮🇳", "IT": "🇮🇹", "KE": "🇰🇪",
+    "KZ": "🇰🇿", "LT": "🇱🇹", "LV": "🇱🇻", "MA": "🇲🇦", "MM": "🇲🇲",
+    "MX": "🇲🇽", "NG": "🇳🇬", "NL": "🇳🇱", "NP": "🇳🇵", "NZ": "🇳🇿",
+    "PH": "🇵🇭", "PK": "🇵🇰", "PL": "🇵🇱", "PT": "🇵🇹", "SA": "🇸🇦",
+    "UAE": "🇦🇪", "QA": "🇶🇦", "BH": "🇧🇭", "KW": "🇰🇼", "SK": "🇸🇰",
+    "SN": "🇸🇳", "SO": "🇸🇴", "TR": "🇹🇷", "UK": "🇬🇧", "UZ": "🇺🇿",
+    "ZM": "🇿🇲",
+}
+
+MAX_MSG = 4000  # предел для текста (чуть меньше 4096 для запаса)
+
+
+# ---------- Клавиатуры ----------
+def main_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 Все офферы", callback_data="all_offers")],
+        [InlineKeyboardButton(text="🌍 GEO", callback_data="geo_menu")],
+        [InlineKeyboardButton(text="🏆 Топ недели", callback_data="top_offers")],
+        [InlineKeyboardButton(text="🔄 Обновить кэш", callback_data="update_cache")]
+    ])
+
+
+def geos_keyboard(geos: list[str]) -> InlineKeyboardMarkup:
+    keyboard: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for geo in geos:
+        flag = GEO_FLAGS.get(geo.upper(), "🏳️")
+        row.append(InlineKeyboardButton(text=f"{flag} {geo}", callback_data=f"geo:{geo}"))
+        if len(row) == 4:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def pager_kb(kind: str, page: int, total: int, extra: str | None = None) -> InlineKeyboardMarkup:
+    """
+    kind: 'all' | 'geo'
+    extra: для geo — сам GEO (например 'BR')
+    """
+    buttons: list[InlineKeyboardButton] = []
+    prev_page = page - 1 if page > 1 else total
+    next_page = page + 1 if page < total else 1
+
+    if kind == "all":
+        buttons.append(InlineKeyboardButton(text="◀️", callback_data=f"all_offers:{prev_page}"))
+        buttons.append(InlineKeyboardButton(text=f"{page}/{total}", callback_data="noop"))
+        buttons.append(InlineKeyboardButton(text="▶️", callback_data=f"all_offers:{next_page}"))
+    else:  # geo
+        geo = extra or ""
+        buttons.append(InlineKeyboardButton(text="◀️", callback_data=f"geo_pg:{geo}:{prev_page}"))
+        buttons.append(InlineKeyboardButton(text=f"{page}/{total}", callback_data="noop"))
+        buttons.append(InlineKeyboardButton(text="▶️", callback_data=f"geo_pg:{geo}:{next_page}"))
+
+    rows = [buttons, [InlineKeyboardButton(text="🏠 Меню", callback_data="home")]]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ---------- Рендер оффера и разбиение на страницы ----------
+def render_offer_block(o) -> str:
+    flag = GEO_FLAGS.get(str(o.geo).upper(), "🏳️") 
+
+    return (
+        f"<b>{html.escape(str(o.name))}</b>\n"
+        f"🌍 <b>GEO:</b> {flag} {html.escape(str(o.geo))}\n"  
+
+        f"📲 <b>Трафик:</b> {html.escape(str(o.traffic or '-'))}\n"
+        f"💰 <b>Оплата:</b> {html.escape(str(o.payout or '-'))}\n"
+        f"🔝 <b>Капа/статус:</b> {html.escape(str(o.capa_status or '-'))}\n"
+        f"📊 <b>Cap/Day:</b> {html.escape(str(o.cap_day or '-'))}\n"
+        f"💹 <b>EPC/CR:</b> {html.escape(str(o.epc or '-'))}\n"
+        f"💵 <b>Профит:</b> {html.escape(str(o.profit or '-'))}\n"
+        f"🎯 <b>KPI:</b> {html.escape(str(o.kpi or '-'))}\n"
+        f"📝 <b>Описание:</b> {html.escape(str(o.description or '-'))}\n"
+        f"⚡ <b>Статус:</b> {html.escape(str(o.status or '-'))}\n"
+        f"👨‍💼 <b>Менеджер:</b> {html.escape(str(o.manager or '-'))}\n"
+        f"🕒 <b>Добавлено:</b> {html.escape(str(o.date_added or '-'))}\n\n"
+    )
+
+
+def paginate_offers(offers: list, title: str) -> list[str]:
+    """
+    Делит длинный вывод на страницы, чтобы каждая была <= MAX_MSG символов.
+    """
+    pages: list[str] = []
+    current = f"{title}\n\n"
+    for o in offers:
+        block = render_offer_block(o)
+        if len(current) + len(block) > MAX_MSG:
+            pages.append(current.rstrip())
+            current = f"{title}\n\n{block}"
+        else:
+            current += block
+    if current.strip():
+        pages.append(current.rstrip())
+    return pages or [f"{title}\n\n(пусто)"]
+
+
+# ---------- Хэндлеры ----------
+@router.message(F.text == "/start")
+async def cmd_start(msg: Message):
+    await msg.answer("👋 Добро пожаловать!\n\n", reply_markup=main_menu())
+
+
+@router.callback_query(F.data == "home")
+async def back_home(cb: CallbackQuery):
+    await cb.message.edit_text("Главное меню:", reply_markup=main_menu())
+    await cb.answer()
+
+
+@router.callback_query(F.data == "geo_menu")
+async def geo_menu(cb: CallbackQuery):
+    geos = await sheets.geos()
+    if not geos:
+        await cb.message.edit_text("Нет доступных стран.", reply_markup=main_menu())
+        await cb.answer()
+        return
+    await cb.message.edit_text(
+        "<b>Выберите страну (GEO):</b>",
+        reply_markup=geos_keyboard(geos),
+        parse_mode="HTML"
+    )
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("geo:"))
+async def geo_click(cb: CallbackQuery):
+    geo = cb.data.split(":", 1)[1]
+    offers = await sheets.offers_by_geo(geo)
+    if not offers:
+        await cb.message.edit_text(
+            f"Нет офферов для {GEO_FLAGS.get(geo.upper(),'🏳️')} {html.escape(geo)}.",
+            reply_markup=main_menu()
+        )
+        await cb.answer()
+        return
+
+    flag = GEO_FLAGS.get(geo.upper(), "🏳️")
+    title = f"<b>Офферы для {flag} {html.escape(geo)}</b>"
+    pages = paginate_offers(offers, title)
+    kb = pager_kb("geo", page=1, total=len(pages), extra=geo)
+    await cb.message.edit_text(pages[0], parse_mode="HTML", reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("geo_pg:"))
+async def geo_page(cb: CallbackQuery):
+    # callback_data формат: geo_pg:{geo}:{page}
+    try:
+        _, geo, page_str = cb.data.split(":", 2)
+        page = int(page_str)
+    except Exception:
+        await cb.answer()
+        return
+
+    offers = await sheets.offers_by_geo(geo)
+    if not offers:
+        await cb.message.edit_text(
+            f"Нет офферов для {GEO_FLAGS.get(geo.upper(),'🏳️')} {html.escape(geo)}.",
+            reply_markup=main_menu()
+        )
+        await cb.answer()
+        return
+
+    flag = GEO_FLAGS.get(geo.upper(), "🏳️")
+    title = f"<b>Офферы для {flag} {html.escape(geo)}</b>"
+    pages = paginate_offers(offers, title)
+    total = len(pages)
+    if page < 1 or page > total:
+        page = 1
+
+    kb = pager_kb("geo", page=page, total=total, extra=geo)
+    await cb.message.edit_text(pages[page - 1], parse_mode="HTML", reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "all_offers")
+async def all_offers(cb: CallbackQuery):
+    offers = await sheets.get_offers()
+    if not offers:
+        await cb.message.edit_text("Список офферов пуст.", reply_markup=main_menu())
+        await cb.answer()
+        return
+
+    pages = paginate_offers(offers, "<b>Все офферы</b>")
+    kb = pager_kb("all", page=1, total=len(pages))
+    await cb.message.edit_text(pages[0], parse_mode="HTML", reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("all_offers:"))
+async def all_offers_page(cb: CallbackQuery):
+    # callback_data формат: all_offers:{page}
+    try:
+        _, page_str = cb.data.split(":", 1)
+        page = int(page_str)
+    except Exception:
+        await cb.answer()
+        return
+
+    offers = await sheets.get_offers()
+    if not offers:
+        await cb.message.edit_text("Список офферов пуст.", reply_markup=main_menu())
+        await cb.answer()
+        return
+
+    pages = paginate_offers(offers, "<b>Все офферы</b>")
+    total = len(pages)
+    if page < 1 or page > total:
+        page = 1
+
+    kb = pager_kb("all", page=page, total=total)
+    await cb.message.edit_text(pages[page - 1], parse_mode="HTML", reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "top_offers")
+async def top_offers(cb: CallbackQuery):
+    top = await sheets.top_offers()
+    if not top:
+        await cb.message.edit_text("Топ офферов пока пуст.", reply_markup=main_menu())
+        await cb.answer()
+        return
+
+    pages = paginate_offers(top, "<b>🏆 Топ офферы недели</b>")
+    kb = pager_kb("all", page=1, total=len(pages))  # пагинация, как у all
+    await cb.message.edit_text(pages[0], parse_mode="HTML", reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "update_cache")
+async def update_cache(cb: CallbackQuery):
+    if cb.from_user.id not in settings.admin_ids:
+        await cb.message.edit_text("Нет доступа.", reply_markup=main_menu())
+        await cb.answer()
+        return
+    await sheets.get_offers(force=True)
+    await cb.message.edit_text("🔄 Кэш обновлён!", reply_markup=main_menu())
+    await cb.answer()
