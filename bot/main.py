@@ -18,6 +18,9 @@ async def main():
 
     dp.include_router(router)
 
+  
+    await bot.delete_webhook(drop_pending_updates=False)
+
     logger.info("Starting polling…")
     await dp.start_polling(
         bot,
