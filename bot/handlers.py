@@ -256,3 +256,52 @@ async def update_cache(cb: CallbackQuery):
     await sheets.get_offers(force=True)
     await cb.message.edit_text("🔄 Кэш обновлён!", reply_markup=main_menu())
     await cb.answer()
+
+
+# --- доступ: /myid, /allow, /deny, /partners ---
+
+@router.message(F.text == "/myid")
+async def my_id(msg: Message):
+    await msg.answer(f"Ваш ID: <code>{msg.from_user.id}</code>", parse_mode="HTML")
+
+
+@router.message(F.text.regexp(r"^/allow\s+\d+$"))
+async def allow_user(msg: Message):
+    # только админ
+    if msg.from_user.id not in settings.admin_ids:
+        await msg.answer("Нет доступа.")
+        return
+    uid = int(msg.text.split()[1])
+    added = await sheets.add_partner(uid)  # должна быть функция в sheets.py
+    if added:
+        await msg.answer(f"✅ Доступ выдан: <code>{uid}</code>", parse_mode="HTML")
+    else:
+        await msg.answer(f"ℹ️ Уже в списке: <code>{uid}</code>", parse_mode="HTML")
+
+
+@router.message(F.text.regexp(r"^/deny\s+\d+$"))
+async def deny_user(msg: Message):
+    # только админ
+    if msg.from_user.id not in settings.admin_ids:
+        await msg.answer("Нет доступа.")
+        return
+    uid = int(msg.text.split()[1])
+    removed = await sheets.remove_partner(uid)  # должна быть функция в sheets.py
+    if removed:
+        await msg.answer(f"🗑️ Удалён: <code>{uid}</code>", parse_mode="HTML")
+    else:
+        await msg.answer(f"🙅 Не найден: <code>{uid}</code>", parse_mode="HTML")
+
+
+@router.message(F.text == "/partners")
+async def list_partners(msg: Message):
+    # только админ
+    if msg.from_user.id not in settings.admin_ids:
+        await msg.answer("Нет доступа.")
+        return
+    ids = sorted(await sheets.partner_ids())  # должна быть функция в sheets.py
+    if not ids:
+        await msg.answer("Список партнёров пуст.")
+        return
+    text = "👥 Партнёры (доступ):\n" + "\n".join(f"• <code>{i}</code>" for i in ids)
+    await msg.answer(text, parse_mode="HTML")

@@ -12,9 +12,9 @@ async def main():
     bot = Bot(token=settings.bot_token, default_parse_mode=ParseMode.HTML)
     dp = Dispatcher()
 
-    access = AccessMiddleware()
-    dp.message.middleware(access)
-    dp.callback_query.middleware(access)
+    # access = AccessMiddleware()
+    # dp.message.middleware(access)
+    # dp.callback_query.middleware(access)
 
     dp.include_router(router)
 
