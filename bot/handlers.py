@@ -101,7 +101,6 @@ def render_offer_block(o) -> str:
         f"📉 <b>Crash rate:</b> {_esc(_get(o, 'crash_rate'))}\n"
         f"💳 <b>Mindep:</b> {_esc(_get(o, 'mindep'))}\n"
         f"📦 <b>Base:</b> {_esc(_get(o, 'base'))}\n"
-        f"💵 <b>Профит:</b> {_esc(_get(o, 'profit'))}\n"
         f"🎯 <b>KPI:</b> {_esc(_get(o, 'kpi'))}\n"
         f"📝 <b>Описание:</b> {_esc(_get(o, 'description'))}\n"
         f"⚡ <b>Статус:</b> {_esc(_get(o, 'status'))}\n"
