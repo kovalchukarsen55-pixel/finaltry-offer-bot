@@ -11,7 +11,6 @@ from bot.config import settings
 
 router = Router(name=__name__)
 
-
 GEO_FLAGS = {
     "AR": "🇦🇷", "AU": "🇦🇺", "BD": "🇧🇩", "BF": "🇧🇫", "BJ": "🇧🇯",
     "BR": "🇧🇷", "CA": "🇨🇦", "CH": "🇨🇭", "CI": "🇨🇮", "CL": "🇨🇱",
@@ -27,6 +26,20 @@ GEO_FLAGS = {
 
 MAX_MSG = 4000  # предел для текста (чуть меньше 4096 для запаса)
 
+# ---------- Хелперы ----------
+def _get(o, name, default: str = "-"):
+    """Безопасно получаем поле из dict или объекта; пустые значения -> default."""
+    try:
+        if isinstance(o, dict):
+            val = o.get(name, None)
+        else:
+            val = getattr(o, name, None)
+    except Exception:
+        val = None
+    return default if val in (None, "") else val
+
+def _esc(v) -> str:
+    return html.escape(str(v))
 
 # ---------- Клавиатуры ----------
 def main_menu() -> InlineKeyboardMarkup:
@@ -36,7 +49,6 @@ def main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🏆 Топ недели", callback_data="top_offers")],
         [InlineKeyboardButton(text="🔄 Обновить кэш", callback_data="update_cache")]
     ])
-
 
 def geos_keyboard(geos: list[str]) -> InlineKeyboardMarkup:
     keyboard: list[list[InlineKeyboardButton]] = []
@@ -50,7 +62,6 @@ def geos_keyboard(geos: list[str]) -> InlineKeyboardMarkup:
     if row:
         keyboard.append(row)
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
 
 def pager_kb(kind: str, page: int, total: int, extra: str | None = None) -> InlineKeyboardMarkup:
     """
@@ -74,31 +85,29 @@ def pager_kb(kind: str, page: int, total: int, extra: str | None = None) -> Inli
     rows = [buttons, [InlineKeyboardButton(text="🏠 Меню", callback_data="home")]]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-
 # ---------- Рендер оффера и разбиение на страницы ----------
 def render_offer_block(o) -> str:
-    flag = GEO_FLAGS.get(str(o.geo).upper(), "🏳️") 
+    geo_val = str(_get(o, "geo", ""))  # пустая строка, чтобы флаг корректно дефолтился
+    flag = GEO_FLAGS.get(geo_val.upper(), "🏳️")
 
     return (
-        f"<b>{html.escape(str(o.name))}</b>\n"
-        f"🌍 <b>GEO:</b> {flag} {html.escape(str(o.geo))}\n"  
-
-        f"📲 <b>Трафик:</b> {html.escape(str(o.traffic or '-'))}\n"
-        f"💰 <b>Оплата:</b> {html.escape(str(o.payout or '-'))}\n"
-        f"🔝 <b>Капа/статус:</b> {html.escape(str(o.capa_status or '-'))}\n"
-        f"📊 <b>Cap/Day:</b> {html.escape(str(o.cap_day or '-'))}\n"
-        f"💹 <b>EPC/CR:</b> {html.escape(str(o.epc or '-'))}\n"
-        f"📉 <b>Crash rate:</b> {html.escape(str(o.crash_rate or '-'))}\n"
-        f"💳 <b>Mindep:</b> {html.escape(str(o.mindep or '-'))}\n"
-        f"📦 <b>Base:</b> {html.escape(str(o.base or '-'))}\n"
-        f"🎯 <b>KPI:</b> {html.escape(str(o.kpi or '-'))}\n"
-        f"📝 <b>Описание:</b> {html.escape(str(o.description or '-'))}\n"
-        f"⚡ <b>Статус:</b> {html.escape(str(o.status or '-'))}\n"
-        f"👨‍💼 <b>Менеджер:</b> {html.escape(str(o.manager or '-'))}\n"
-        f"🕒 <b>Добавлено:</b> {html.escape(str(o.date_added or '-'))}\n\n"
+        f"<b>{_esc(_get(o, 'name'))}</b>\n"
+        f"🌍 <b>GEO:</b> {flag} {_esc(geo_val)}\n"
+        f"📲 <b>Трафик:</b> {_esc(_get(o, 'traffic'))}\n"
+        f"💰 <b>Оплата:</b> {_esc(_get(o, 'payout'))}\n"
+        f"🔝 <b>Капа/статус:</b> {_esc(_get(o, 'capa_status'))}\n"
+        f"📊 <b>Cap/Day:</b> {_esc(_get(o, 'cap_day'))}\n"
+        f"💹 <b>EPC/CR:</b> {_esc(_get(o, 'epc'))}\n"
+        f"📉 <b>Crash rate:</b> {_esc(_get(o, 'crash_rate'))}\n"
+        f"💳 <b>Mindep:</b> {_esc(_get(o, 'mindep'))}\n"
+        f"📦 <b>Base:</b> {_esc(_get(o, 'base'))}\n"
+        f"💵 <b>Профит:</b> {_esc(_get(o, 'profit'))}\n"
+        f"🎯 <b>KPI:</b> {_esc(_get(o, 'kpi'))}\n"
+        f"📝 <b>Описание:</b> {_esc(_get(o, 'description'))}\n"
+        f"⚡ <b>Статус:</b> {_esc(_get(o, 'status'))}\n"
+        f"👨‍💼 <b>Менеджер:</b> {_esc(_get(o, 'manager'))}\n"
+        f"🕒 <b>Добавлено:</b> {_esc(_get(o, 'date_added'))}\n\n"
     )
-
-
 
 def paginate_offers(offers: list, title: str) -> list[str]:
     """
@@ -117,18 +126,15 @@ def paginate_offers(offers: list, title: str) -> list[str]:
         pages.append(current.rstrip())
     return pages or [f"{title}\n\n(пусто)"]
 
-
 # ---------- Хэндлеры ----------
 @router.message(F.text == "/start")
 async def cmd_start(msg: Message):
     await msg.answer("👋 Добро пожаловать!\n\n", reply_markup=main_menu())
 
-
 @router.callback_query(F.data == "home")
 async def back_home(cb: CallbackQuery):
     await cb.message.edit_text("Главное меню:", reply_markup=main_menu())
     await cb.answer()
-
 
 @router.callback_query(F.data == "geo_menu")
 async def geo_menu(cb: CallbackQuery):
@@ -143,7 +149,6 @@ async def geo_menu(cb: CallbackQuery):
         parse_mode="HTML"
     )
     await cb.answer()
-
 
 @router.callback_query(F.data.startswith("geo:"))
 async def geo_click(cb: CallbackQuery):
@@ -163,7 +168,6 @@ async def geo_click(cb: CallbackQuery):
     kb = pager_kb("geo", page=1, total=len(pages), extra=geo)
     await cb.message.edit_text(pages[0], parse_mode="HTML", reply_markup=kb)
     await cb.answer()
-
 
 @router.callback_query(F.data.startswith("geo_pg:"))
 async def geo_page(cb: CallbackQuery):
@@ -195,7 +199,6 @@ async def geo_page(cb: CallbackQuery):
     await cb.message.edit_text(pages[page - 1], parse_mode="HTML", reply_markup=kb)
     await cb.answer()
 
-
 @router.callback_query(F.data == "all_offers")
 async def all_offers(cb: CallbackQuery):
     offers = await sheets.get_offers()
@@ -208,7 +211,6 @@ async def all_offers(cb: CallbackQuery):
     kb = pager_kb("all", page=1, total=len(pages))
     await cb.message.edit_text(pages[0], parse_mode="HTML", reply_markup=kb)
     await cb.answer()
-
 
 @router.callback_query(F.data.startswith("all_offers:"))
 async def all_offers_page(cb: CallbackQuery):
@@ -235,7 +237,6 @@ async def all_offers_page(cb: CallbackQuery):
     await cb.message.edit_text(pages[page - 1], parse_mode="HTML", reply_markup=kb)
     await cb.answer()
 
-
 @router.callback_query(F.data == "top_offers")
 async def top_offers(cb: CallbackQuery):
     top = await sheets.top_offers()
@@ -249,7 +250,6 @@ async def top_offers(cb: CallbackQuery):
     await cb.message.edit_text(pages[0], parse_mode="HTML", reply_markup=kb)
     await cb.answer()
 
-
 @router.callback_query(F.data == "update_cache")
 async def update_cache(cb: CallbackQuery):
     if cb.from_user.id not in settings.admin_ids:
@@ -260,13 +260,10 @@ async def update_cache(cb: CallbackQuery):
     await cb.message.edit_text("🔄 Кэш обновлён!", reply_markup=main_menu())
     await cb.answer()
 
-
 # --- доступ: /myid, /allow, /deny, /partners ---
-
 @router.message(F.text == "/myid")
 async def my_id(msg: Message):
     await msg.answer(f"Ваш ID: <code>{msg.from_user.id}</code>", parse_mode="HTML")
-
 
 @router.message(F.text.regexp(r"^/allow\s+\d+$"))
 async def allow_user(msg: Message):
@@ -281,7 +278,6 @@ async def allow_user(msg: Message):
     else:
         await msg.answer(f"ℹ️ Уже в списке: <code>{uid}</code>", parse_mode="HTML")
 
-
 @router.message(F.text.regexp(r"^/deny\s+\d+$"))
 async def deny_user(msg: Message):
     # только админ
@@ -294,7 +290,6 @@ async def deny_user(msg: Message):
         await msg.answer(f"🗑️ Удалён: <code>{uid}</code>", parse_mode="HTML")
     else:
         await msg.answer(f"🙅 Не найден: <code>{uid}</code>", parse_mode="HTML")
-
 
 @router.message(F.text == "/partners")
 async def list_partners(msg: Message):
