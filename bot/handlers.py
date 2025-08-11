@@ -88,13 +88,16 @@ def render_offer_block(o) -> str:
         f"🔝 <b>Капа/статус:</b> {html.escape(str(o.capa_status or '-'))}\n"
         f"📊 <b>Cap/Day:</b> {html.escape(str(o.cap_day or '-'))}\n"
         f"💹 <b>EPC/CR:</b> {html.escape(str(o.epc or '-'))}\n"
-        f"💵 <b>Профит:</b> {html.escape(str(o.profit or '-'))}\n"
+        f"📉 <b>Crash rate:</b> {html.escape(str(o.crash_rate or '-'))}\n"
+        f"💳 <b>Mindep:</b> {html.escape(str(o.mindep or '-'))}\n"
+        f"📦 <b>Base:</b> {html.escape(str(o.base or '-'))}\n"
         f"🎯 <b>KPI:</b> {html.escape(str(o.kpi or '-'))}\n"
         f"📝 <b>Описание:</b> {html.escape(str(o.description or '-'))}\n"
         f"⚡ <b>Статус:</b> {html.escape(str(o.status or '-'))}\n"
         f"👨‍💼 <b>Менеджер:</b> {html.escape(str(o.manager or '-'))}\n"
         f"🕒 <b>Добавлено:</b> {html.escape(str(o.date_added or '-'))}\n\n"
     )
+
 
 
 def paginate_offers(offers: list, title: str) -> list[str]:
