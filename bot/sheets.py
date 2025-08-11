@@ -79,7 +79,7 @@ def _offer_from_row(row: Iterable[Any]) -> Offer:
 # --------- Загрузка из Google Sheets ---------
 async def _query() -> List[Offer]:
     # 1) имя листа из ENV, если задано; 2) иначе твой хардкод; 3) иначе первый лист
-    worksheet_name = os.environ.get("SHEETS_WORKSHEET") or "Update on cap for August Viktoria TopRange"
+    worksheet_name = os.environ.get("SHEETS_WORKSHEET") or "TopRange Caps ОБЩАЯ"
 
     agcm = get_agcm()
     client = await agcm.authorize()
